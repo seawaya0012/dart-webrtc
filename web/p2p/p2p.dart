@@ -1,7 +1,8 @@
-import 'package:dart_webrtc_plus/dart_webrtc_plus.dart';
+import 'dart:html' as html;
 
+import 'package:dart_webrtc/dart_webrtc.dart';
+import 'package:js/js.dart';
 import 'package:test/test.dart';
-import 'package:web/web.dart' as web;
 
 import 'signaling.dart';
 
@@ -18,29 +19,29 @@ void main() {
 
   var signaling = Signaling('demo.cloudwebrtc.com');
 
-  var local = web.document.querySelector('#local');
+  var local = html.document.querySelector('#local');
 
   var localVideo = RTCVideoElement();
 
   local?.append(localVideo.htmlElement);
 
-  var remote = web.document.querySelector('#remote');
+  var remote = html.document.querySelector('#remote');
 
   var remoteVideo = RTCVideoElement();
 
   remote?.append(remoteVideo.htmlElement);
 
-  signaling.onLocalStream = (MediaStream stream) {
+  signaling.onLocalStream = allowInterop((MediaStream stream) {
     localVideo.srcObject = stream;
-  };
+  });
 
-  signaling.onAddRemoteStream = (MediaStream stream) {
+  signaling.onAddRemoteStream = allowInterop((MediaStream stream) {
     remoteVideo.srcObject = stream;
-  };
+  });
 
   signaling.connect();
   signaling.onStateChange = (SignalingState state) {
-    web.document.querySelector('#output')?.text = state.toString();
+    html.document.querySelector('#output')?.text = state.toString();
     if (state == SignalingState.CallStateBye) {
       localVideo.srcObject = null;
       remoteVideo.srcObject = null;

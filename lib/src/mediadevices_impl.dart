@@ -1,75 +1,39 @@
 import 'dart:async';
-
-import 'dart:js_interop';
-import 'dart:js_interop_unsafe';
-
-import 'package:web/web.dart' as web;
-import 'package:webrtc_interface_plus/webrtc_interface_plus.dart';
+import 'dart:html' as html;
+import 'dart:js' as js;
+import 'dart:js_util' as jsutil;
+import 'package:webrtc_interface/webrtc_interface.dart';
 
 import 'media_stream_impl.dart';
-import 'utils.dart';
-
-@JS('navigator.mediaDevices.getUserMedia')
-external JSPromise<web.MediaStream> _getUserMedia(JSAny? constraints);
-
-@JS('navigator.mediaDevices.getDisplayMedia')
-external JSPromise<web.MediaStream> _getDisplayMedia(JSAny? constraints);
 
 class MediaDevicesWeb extends MediaDevices {
   @override
   Future<MediaStream> getUserMedia(
       Map<String, dynamic> mediaConstraints) async {
     try {
-      try {
-        if (!isMobile) {
-          if (mediaConstraints['video'] is Map &&
-              mediaConstraints['video']['facingMode'] != null) {
-            mediaConstraints['video'].remove('facingMode');
-          }
+      if (mediaConstraints['video'] is Map) {
+        if (mediaConstraints['video']['facingMode'] != null) {
+          mediaConstraints['video'].remove('facingMode');
         }
-        mediaConstraints.putIfAbsent('video', () => false);
-        mediaConstraints.putIfAbsent('audio', () => false);
-      } catch (e) {
-        print(
-            '[getUserMedia] failed to remove facingMode from mediaConstraints');
-      }
-      try {
-        if (mediaConstraints['audio'] is Map<String, dynamic> &&
-            Map.from(mediaConstraints['audio']).containsKey('optional') &&
-            mediaConstraints['audio']['optional']
-                is List<Map<String, dynamic>>) {
-          List<Map<String, dynamic>> optionalValues =
-              mediaConstraints['audio']['optional'];
-          final audioMap = <String, dynamic>{};
-
-          optionalValues.forEach((option) {
-            option.forEach((key, value) {
-              audioMap[key] = value;
-            });
-          });
-
-          mediaConstraints['audio'].remove('optional');
-          mediaConstraints['audio'].addAll(audioMap);
-        }
-      } catch (e, s) {
-        print(
-            '[getUserMedia] failed to translate optional audio constraints, $e, $s');
       }
 
-      final mediaDevices = web.window.navigator.mediaDevices as JSObject;
-      final hasGetUserMedia = mediaDevices.hasProperty('getUserMedia'.toJS);
+      mediaConstraints.putIfAbsent('video', () => false);
+      mediaConstraints.putIfAbsent('audio', () => false);
 
-      if (hasGetUserMedia.toDart) {
-        var args = mediaConstraints.jsify();
-        final jsStream = await _getUserMedia(args).toDart;
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) throw Exception('MediaDevices is null');
+
+      if (jsutil.hasProperty(mediaDevices, 'getUserMedia')) {
+        var args = jsutil.jsify(mediaConstraints);
+        final jsStream = await jsutil.promiseToFuture<html.MediaStream>(
+            jsutil.callMethod(mediaDevices, 'getUserMedia', [args]));
+
         return MediaStreamWeb(jsStream, 'local');
       } else {
-        final jsStream = await web.window.navigator.mediaDevices
-            .getUserMedia(web.MediaStreamConstraints(
-              audio: mediaConstraints['audio'],
-              video: mediaConstraints['video'],
-            ))
-            .toDart;
+        final jsStream = await html.window.navigator.getUserMedia(
+          audio: mediaConstraints['audio'],
+          video: mediaConstraints['video'],
+        );
         return MediaStreamWeb(jsStream, 'local');
       }
     } catch (e) {
@@ -81,20 +45,18 @@ class MediaDevicesWeb extends MediaDevices {
   Future<MediaStream> getDisplayMedia(
       Map<String, dynamic> mediaConstraints) async {
     try {
-      final mediaDevices = web.window.navigator.mediaDevices as JSObject;
-      final hasDisplayMedia = mediaDevices.hasProperty('getDisplayMedia'.toJS);
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) throw Exception('MediaDevices is null');
 
-      if (hasDisplayMedia.toDart) {
-        final args = mediaConstraints.jsify();
-        final jsStream = await _getDisplayMedia(args).toDart;
-
+      if (jsutil.hasProperty(mediaDevices, 'getDisplayMedia')) {
+        final arg = jsutil.jsify(mediaConstraints);
+        final jsStream = await jsutil.promiseToFuture<html.MediaStream>(
+            jsutil.callMethod(mediaDevices, 'getDisplayMedia', [arg]));
         return MediaStreamWeb(jsStream, 'local');
       } else {
-        final jsStream = await web.window.navigator.mediaDevices
-            .getUserMedia(web.MediaStreamConstraints(
-                video: {'mediaSource': 'screen'}.jsify()!,
-                audio: mediaConstraints['audio'] ?? false))
-            .toDart;
+        final jsStream = await html.window.navigator.getUserMedia(
+            video: {'mediaSource': 'screen'},
+            audio: mediaConstraints['audio'] ?? false);
         return MediaStreamWeb(jsStream, 'local');
       }
     } catch (e) {
@@ -107,94 +69,90 @@ class MediaDevicesWeb extends MediaDevices {
     final devices = await getSources();
 
     return devices.map((e) {
-      var input = e;
+      var input = e as html.MediaDeviceInfo;
       return MediaDeviceInfo(
-        deviceId: input.deviceId,
+        deviceId:
+            input.deviceId ?? 'Generated Device Id :(${devices.indexOf(e)})',
         groupId: input.groupId,
         kind: input.kind,
-        label: input.label,
+        label: input.label ?? 'Generated label :(${devices.indexOf(e)})',
       );
     }).toList();
   }
 
   @override
-  Future<List<web.MediaDeviceInfo>> getSources() async {
-    final devices =
-        await web.window.navigator.mediaDevices.enumerateDevices().toDart;
-    return devices.toDart;
+  Future<List<dynamic>> getSources() async {
+    return html.window.navigator.mediaDevices?.enumerateDevices() ??
+        Future.value([]);
   }
 
   @override
   MediaTrackSupportedConstraints getSupportedConstraints() {
-    final mediaDevices = web.window.navigator.mediaDevices;
+    final mediaDevices = html.window.navigator.mediaDevices;
+    if (mediaDevices == null) throw Exception('Mediadevices is null');
 
     var _mapConstraints = mediaDevices.getSupportedConstraints();
 
     return MediaTrackSupportedConstraints(
-        aspectRatio: _mapConstraints.aspectRatio,
-        autoGainControl: _mapConstraints.autoGainControl,
-        brightness: _mapConstraints.brightness,
-        channelCount: _mapConstraints.channelCount,
-        colorTemperature: _mapConstraints.colorTemperature,
-        contrast: _mapConstraints.contrast,
-        deviceId: _mapConstraints.deviceId,
-        echoCancellation: _mapConstraints.echoCancellation,
-        exposureCompensation: _mapConstraints.exposureCompensation,
-        exposureMode: _mapConstraints.exposureMode,
-        exposureTime: _mapConstraints.exposureTime,
-        facingMode: _mapConstraints.facingMode,
-        focusDistance: _mapConstraints.focusDistance,
-        focusMode: _mapConstraints.focusMode,
-        frameRate: _mapConstraints.frameRate,
-        groupId: _mapConstraints.groupId,
-        height: _mapConstraints.height,
-        iso: _mapConstraints.iso,
-        latency: _mapConstraints.latency,
-        noiseSuppression: _mapConstraints.noiseSuppression,
-        pan: _mapConstraints.pan,
-        pointsOfInterest: _mapConstraints.pointsOfInterest,
-        resizeMode: _mapConstraints.resizeMode,
-        saturation: _mapConstraints.saturation,
-        sampleRate: _mapConstraints.sampleRate,
-        sampleSize: _mapConstraints.sampleSize,
-        sharpness: _mapConstraints.sharpness,
-        tilt: _mapConstraints.tilt,
-        torch: _mapConstraints.torch,
-        whiteBalanceMode: _mapConstraints.whiteBalanceMode,
-        width: _mapConstraints.width,
-        zoom: _mapConstraints.zoom);
+        aspectRatio: _mapConstraints['aspectRatio'],
+        autoGainControl: _mapConstraints['autoGainControl'],
+        brightness: _mapConstraints['brightness'],
+        channelCount: _mapConstraints['channelCount'],
+        colorTemperature: _mapConstraints['colorTemperature'],
+        contrast: _mapConstraints['contrast'],
+        deviceId: _mapConstraints['deviceId'],
+        echoCancellation: _mapConstraints['echoCancellation'],
+        exposureCompensation: _mapConstraints['exposureCompensation'],
+        exposureMode: _mapConstraints['exposureMode'],
+        exposureTime: _mapConstraints['exposureTime'],
+        facingMode: _mapConstraints['facingMode'],
+        focusDistance: _mapConstraints['focusDistance'],
+        focusMode: _mapConstraints['focusMode'],
+        frameRate: _mapConstraints['frameRate'],
+        groupId: _mapConstraints['groupId'],
+        height: _mapConstraints['height'],
+        iso: _mapConstraints['iso'],
+        latency: _mapConstraints['latency'],
+        noiseSuppression: _mapConstraints['noiseSuppression'],
+        pan: _mapConstraints['pan'],
+        pointsOfInterest: _mapConstraints['pointsOfInterest'],
+        resizeMode: _mapConstraints['resizeMode'],
+        saturation: _mapConstraints['saturation'],
+        sampleRate: _mapConstraints['sampleRate'],
+        sampleSize: _mapConstraints['sampleSize'],
+        sharpness: _mapConstraints['sharpness'],
+        tilt: _mapConstraints['tilt'],
+        torch: _mapConstraints['torch'],
+        whiteBalanceMode: _mapConstraints['whiteBalanceMode'],
+        width: _mapConstraints['width'],
+        zoom: _mapConstraints['zoom']);
   }
 
   @override
   Future<MediaDeviceInfo> selectAudioOutput(
       [AudioOutputOptions? options]) async {
     try {
-      final mediaDevices = web.window.navigator.mediaDevices as JSObject;
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) throw Exception('MediaDevices is null');
 
-      final hasSelectAudioOutput =
-          mediaDevices.hasProperty('selectAudioOutput'.toJS);
-
-      if (hasSelectAudioOutput.toDart) {
+      if (jsutil.hasProperty(mediaDevices, 'selectAudioOutput')) {
         if (options != null) {
-          final arg = options.jsify();
-          final deviceInfo = await JSPromise<web.MediaDeviceInfo>(
-                  mediaDevices.callMethod('selectAudioOutput'.toJS, arg))
-              .toDart;
+          final arg = jsutil.jsify(options);
+          final deviceInfo = await jsutil.promiseToFuture<html.MediaDeviceInfo>(
+              jsutil.callMethod(mediaDevices, 'selectAudioOutput', [arg]));
           return MediaDeviceInfo(
             kind: deviceInfo.kind,
-            label: deviceInfo.label,
-            deviceId: deviceInfo.deviceId,
+            label: deviceInfo.label ?? '',
+            deviceId: deviceInfo.deviceId ?? '',
             groupId: deviceInfo.groupId,
           );
         } else {
-          final deviceInfo =
-              await JSPromise<web.MediaDeviceInfo>(mediaDevices.callMethod(
-            'selectAudioOutput'.toJS,
-          )).toDart;
+          final deviceInfo = await jsutil.promiseToFuture<html.MediaDeviceInfo>(
+              jsutil.callMethod(mediaDevices, 'selectAudioOutput', []));
           return MediaDeviceInfo(
             kind: deviceInfo.kind,
-            label: deviceInfo.label,
-            deviceId: deviceInfo.deviceId,
+            label: deviceInfo.label ?? '',
+            deviceId: deviceInfo.deviceId ?? '',
             groupId: deviceInfo.groupId,
           );
         }
@@ -209,12 +167,11 @@ class MediaDevicesWeb extends MediaDevices {
   @override
   set ondevicechange(Function(dynamic event)? listener) {
     try {
-      final mediaDevices = web.window.navigator.mediaDevices;
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) throw Exception('MediaDevices is null');
 
-      mediaDevices.setProperty(
-        'ondevicechange'.toJS,
-        ((evt) => listener?.call(evt)).jsify(),
-      );
+      jsutil.setProperty(mediaDevices, 'ondevicechange',
+          js.allowInterop((evt) => listener?.call(evt)));
     } catch (e) {
       throw 'Unable to set ondevicechange: ${e.toString()}';
     }
@@ -223,32 +180,13 @@ class MediaDevicesWeb extends MediaDevices {
   @override
   Function(dynamic event)? get ondevicechange {
     try {
-      final mediaDevices = web.window.navigator.mediaDevices;
+      final mediaDevices = html.window.navigator.mediaDevices;
+      if (mediaDevices == null) throw Exception('MediaDevices is null');
 
-      mediaDevices.getProperty('ondevicechange'.toJS);
+      jsutil.getProperty(mediaDevices, 'ondevicechange');
     } catch (e) {
       throw 'Unable to get ondevicechange: ${e.toString()}';
     }
     return null;
   }
-}
-
-extension _MediaTrackConstraints on web.MediaTrackSupportedConstraints {
-  external bool get brightness;
-  external bool get colorTemperature;
-  external bool get contrast;
-  external bool get exposureCompensation;
-  external bool get exposureMode;
-  external bool get exposureTime;
-  external bool get focusDistance;
-  external bool get focusMode;
-  external bool get iso;
-  external bool get pan;
-  external bool get pointsOfInterest;
-  external bool get saturation;
-  external bool get sharpness;
-  external bool get tilt;
-  external bool get torch;
-  external bool get whiteBalanceMode;
-  external bool get zoom;
 }

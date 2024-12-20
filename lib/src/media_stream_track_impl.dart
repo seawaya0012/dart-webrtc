@@ -1,22 +1,17 @@
 import 'dart:async';
-import 'dart:js_interop';
-import 'dart:js_interop_unsafe';
-
+import 'dart:html' as html;
+import 'dart:js_util' as js;
 import 'dart:typed_data';
-
-import 'package:web/web.dart' as web;
-import 'package:webrtc_interface_plus/webrtc_interface_plus.dart';
-
-import 'utils.dart';
+import 'package:webrtc_interface/webrtc_interface.dart';
 
 class MediaStreamTrackWeb extends MediaStreamTrack {
   MediaStreamTrackWeb(this.jsTrack) {
-    jsTrack.addEventListener('ended', ((event) => onEnded?.call()).toJS);
-    jsTrack.addEventListener('mute', ((event) => onMute?.call()).toJS);
-    jsTrack.addEventListener('unmute', ((event) => onUnMute?.call()).toJS);
+    jsTrack.onEnded.listen((event) => onEnded?.call());
+    jsTrack.onMute.listen((event) => onMute?.call());
+    jsTrack.onUnmute.listen((event) => onUnMute?.call());
   }
 
-  final web.MediaStreamTrack jsTrack;
+  final html.MediaStreamTrack jsTrack;
 
   @override
   String? get id => jsTrack.id;
@@ -28,33 +23,30 @@ class MediaStreamTrackWeb extends MediaStreamTrack {
   String? get label => jsTrack.label;
 
   @override
-  bool get enabled => jsTrack.enabled;
+  bool get enabled => jsTrack.enabled ?? false;
 
   @override
   bool? get muted => jsTrack.muted;
 
   @override
   set enabled(bool? b) {
-    jsTrack.enabled = b ?? false;
+    jsTrack.enabled = b;
   }
 
   @override
   Map<String, dynamic> getConstraints() {
-    final c = jsTrack.getConstraints();
-    final jso = (c as JSObject).dartify();
-    return (jso as Map).cast<String, dynamic>();
+    return jsTrack.getConstraints() as Map<String, dynamic>;
   }
 
   @override
   Future<void> applyConstraints([Map<String, dynamic>? constraints]) async {
     // TODO(wermathurin): Wait for: https://github.com/dart-lang/sdk/commit/1a861435579a37c297f3be0cf69735d5b492bc6c
     // to be merged to use jsTrack.applyConstraints() directly
-    final arg = (constraints ?? {}).jsify();
+    final arg = js.jsify(constraints ?? {});
 
-    await JSPromise(
-      jsTrack.callMethod('applyConstraints'.toJS, arg),
-    ).toDart;
-    return;
+    final _val = await js.promiseToFuture<void>(
+        js.callMethod(jsTrack, 'applyConstraints', [arg]));
+    return _val;
   }
 
   // TODO(wermathurin): https://github.com/dart-lang/sdk/issues/44319
@@ -67,52 +59,24 @@ class MediaStreamTrackWeb extends MediaStreamTrack {
 
   @override
   Map<String, dynamic> getSettings() {
-    var settings = jsTrack.getSettings();
-    var _converted = <String, dynamic>{};
-    if (kind == 'audio') {
-      _converted['sampleRate'] = settings.sampleRate;
-      _converted['sampleSize'] = settings.sampleSize;
-      _converted['echoCancellation'] = settings.echoCancellation;
-      _converted['autoGainControl'] = settings.autoGainControl;
-      _converted['noiseSuppression'] = settings.noiseSuppression;
-      _converted['latency'] = settings.latency;
-      _converted['channelCount'] = settings.channelCount;
-    } else {
-      _converted['width'] = settings.width;
-      _converted['height'] = settings.height;
-      _converted['aspectRatio'] = settings.aspectRatio;
-      _converted['frameRate'] = settings.frameRate;
-      if (isMobile) {
-        _converted['facingMode'] = settings.facingMode;
-      }
-      _converted['resizeMode'] = settings.resizeMode;
-    }
-    _converted['deviceId'] = settings.deviceId;
-    _converted['groupId'] = settings.groupId;
-    return _converted;
+    return jsTrack.getSettings() as Map<String, dynamic>;
   }
 
   @override
   Future<ByteBuffer> captureFrame() async {
-    final imageCapture = ImageCapture(jsTrack);
-    final bitmap = await imageCapture.grabFrame().toDart as web.ImageBitmap;
-    final canvas = web.HTMLCanvasElement();
+    final imageCapture = html.ImageCapture(jsTrack);
+    final bitmap = await imageCapture.grabFrame();
+    final canvas = html.CanvasElement();
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
     final renderer =
-        canvas.getContext('bitmaprenderer') as web.ImageBitmapRenderingContext;
-    renderer.callMethod('transferFromImageBitmap'.toJS, bitmap);
-
-    final blobCompleter = Completer<web.Blob>();
-    canvas.toBlob((web.Blob blob) {
-      blobCompleter.complete(blob);
-    }.toJS);
-
-    final blod = await blobCompleter.future;
-
-    var array = await blod.arrayBuffer().toDart;
+        canvas.getContext('bitmaprenderer') as html.ImageBitmapRenderingContext;
+    js.callMethod(renderer, 'transferFromImageBitmap', [bitmap]);
+    final blod = await canvas.toBlob();
+    var array =
+        await js.promiseToFuture(js.callMethod(blod, 'arrayBuffer', []));
     bitmap.close();
-    return array.toDart;
+    return array;
   }
 
   @override
@@ -132,15 +96,4 @@ class MediaStreamTrackWeb extends MediaStreamTrack {
   Future<void> setTorch(bool torch) {
     throw UnimplementedError('The web implementation does not support torch');
   }
-
-  @override
-  Future<MediaStreamTrack> clone() async {
-    return MediaStreamTrackWeb(jsTrack.clone());
-  }
-}
-
-extension type ImageCapture._(JSObject _) implements JSObject {
-  external factory ImageCapture(web.MediaStreamTrack track);
-
-  external JSPromise grabFrame();
 }

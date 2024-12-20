@@ -1,18 +1,18 @@
-import 'package:web/web.dart' as web;
-import 'package:webrtc_interface_plus/webrtc_interface_plus.dart';
+import 'dart:html' as html;
+import 'package:webrtc_interface/webrtc_interface.dart';
 
 class RTCDTMFSenderWeb extends RTCDTMFSender {
   RTCDTMFSenderWeb(this._jsDtmfSender);
-  final web.RTCDTMFSender _jsDtmfSender;
+  final html.RtcDtmfSender _jsDtmfSender;
 
   @override
   Future<void> insertDTMF(String tones,
       {int duration = 100, int interToneGap = 70}) async {
-    return _jsDtmfSender.insertDTMF(tones, duration, interToneGap);
+    return _jsDtmfSender.insertDtmf(tones, duration, interToneGap);
   }
 
   @override
   Future<bool> canInsertDtmf() async {
-    return _jsDtmfSender.canInsertDTMF;
+    return _jsDtmfSender.canInsertDtmf ?? false;
   }
 }

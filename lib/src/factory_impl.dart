@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:js_interop';
+import 'dart:html' as html;
+import 'package:js/js.dart';
+import 'package:webrtc_interface/webrtc_interface.dart';
 
-import 'package:web/web.dart' as web;
-import 'package:webrtc_interface_plus/webrtc_interface_plus.dart';
-
-import 'frame_cryptor_impl.dart';
 import 'media_recorder_impl.dart';
 import 'media_stream_impl.dart';
 import 'navigator_impl.dart';
@@ -13,15 +11,15 @@ import 'rtc_peerconnection_impl.dart';
 import 'rtc_rtp_capailities_imp.dart';
 
 @JS('RTCRtpSender')
-@staticInterop
+@anonymous
 class RTCRtpSenderJs {
-  external static JSObject getCapabilities(String kind);
+  external static Object getCapabilities(String kind);
 }
 
 @JS('RTCRtpReceiver')
-@staticInterop
+@anonymous
 class RTCRtpReceiverJs {
-  external static JSObject getCapabilities(String kind);
+  external static Object getCapabilities(String kind);
 }
 
 class RTCFactoryWeb extends RTCFactory {
@@ -40,15 +38,14 @@ class RTCFactoryWeb extends RTCFactory {
               {'DtlsSrtpKeyAgreement': true},
             ],
           };
-    final jsRtcPc = web.RTCPeerConnection(
-        {...constr, ...configuration}.jsify() as web.RTCConfiguration);
+    final jsRtcPc = html.RtcPeerConnection({...constr, ...configuration});
     final _peerConnectionId = base64Encode(jsRtcPc.toString().codeUnits);
     return RTCPeerConnectionWeb(_peerConnectionId, jsRtcPc);
   }
 
   @override
   Future<MediaStream> createLocalMediaStream(String label) async {
-    final jsMs = web.MediaStream();
+    final jsMs = html.MediaStream();
     return MediaStreamWeb(jsMs, 'local');
   }
 
@@ -64,10 +61,6 @@ class RTCFactoryWeb extends RTCFactory {
 
   @override
   Navigator get navigator => NavigatorWeb();
-
-  @override
-  FrameCryptorFactory get frameCryptorFactory =>
-      FrameCryptorFactoryImpl.instance;
 
   @override
   Future<RTCRtpCapabilities> getRtpReceiverCapabilities(String kind) async {
@@ -110,7 +103,3 @@ VideoRenderer videoRenderer() {
 }
 
 Navigator get navigator => RTCFactoryWeb.instance.navigator;
-
-FrameCryptorFactory get frameCryptorFactory => FrameCryptorFactoryImpl.instance;
-
-MediaDevices get mediaDevices => navigator.mediaDevices;

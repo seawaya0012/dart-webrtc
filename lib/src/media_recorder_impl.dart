@@ -1,15 +1,12 @@
 import 'dart:async';
-
-import 'dart:js_interop';
-import 'dart:js_interop_unsafe';
-
-import 'package:web/web.dart' as web;
-import 'package:webrtc_interface_plus/webrtc_interface_plus.dart';
+import 'dart:html' as html;
+import 'dart:js' as js;
+import 'package:webrtc_interface/webrtc_interface.dart';
 
 import 'media_stream_impl.dart';
 
 class MediaRecorderWeb extends MediaRecorder {
-  late web.MediaRecorder _recorder;
+  late html.MediaRecorder _recorder;
   late Completer<String> _completer;
 
   @override
@@ -31,38 +28,30 @@ class MediaRecorderWeb extends MediaRecorder {
     int timeSlice = 1000,
   }) {
     var _native = stream as MediaStreamWeb;
-    _recorder = web.MediaRecorder(
-        _native.jsStream, web.MediaRecorderOptions(mimeType: mimeType));
+    _recorder = html.MediaRecorder(_native.jsStream, {'mimeType': mimeType});
     if (onDataChunk == null) {
-      var _chunks = <web.Blob>[];
+      var _chunks = <html.Blob>[];
       _completer = Completer<String>();
-      _recorder.addEventListener(
-          'dataavailable',
-          (web.Event event) {
-            final blob = event.getProperty('data'.toJS) as web.Blob;
-            if (blob.size > 0) {
-              _chunks.add(blob);
-            }
-            if (_recorder.state == 'inactive') {
-              final blob =
-                  web.Blob(_chunks.toJS, web.BlobPropertyBag(type: mimeType));
-              _completer.complete(web.URL.createObjectURL(blob));
-            }
-          }.toJS);
-      _recorder.addEventListener(
-          'error',
-          (JSAny error) {
-            _completer.completeError(error);
-          }.toJS);
+      _recorder.addEventListener('dataavailable', (html.Event event) {
+        final html.Blob blob = js.JsObject.fromBrowserObject(event)['data'];
+        if (blob.size > 0) {
+          _chunks.add(blob);
+        }
+        if (_recorder.state == 'inactive') {
+          final blob = html.Blob(_chunks, mimeType);
+          _completer.complete(html.Url.createObjectUrlFromBlob(blob));
+        }
+      });
+      _recorder.onError.listen((error) {
+        _completer.completeError(error);
+      });
     } else {
-      _recorder.addEventListener(
-          'dataavailable',
-          (web.Event event) {
-            onDataChunk(
-              event.getProperty('data'.toJS),
-              _recorder.state == 'inactive',
-            );
-          }.toJS);
+      _recorder.addEventListener('dataavailable', (html.Event event) {
+        onDataChunk(
+          js.JsObject.fromBrowserObject(event)['data'],
+          _recorder.state == 'inactive',
+        );
+      });
     }
     _recorder.start(timeSlice);
   }
